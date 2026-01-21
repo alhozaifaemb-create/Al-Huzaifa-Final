@@ -1,11 +1,15 @@
 "use client";
 
 import { useState, useEffect, useMemo, Suspense } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, addDoc, where } from 'firebase/firestore';
+// 🟢 FIX 1: Import Auth
+import { db, auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
 import Layout from '@/components/Layout';
+// 🟢 FIX 2: Import Login Component
+import Login from '@/components/Login';
 import { 
   Plus, 
   Search, 
@@ -15,10 +19,15 @@ import {
   CheckCircle2, 
   Clock, 
   ChevronRight, 
-  Filter 
+  Filter,
+  Loader2
 } from 'lucide-react'; 
 
 function BillsContent() {
+  // 🟢 FIX 3: Add User State
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [bills, setBills] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]); 
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,6 +46,15 @@ function BillsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // 🟢 FIX 4: Listen for Login Status
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // 1. LISTEN FOR HOME PAGE CLICKS
   useEffect(() => {
     const filterParam = searchParams.get('filter');
@@ -44,24 +62,38 @@ function BillsContent() {
     if (filterParam === 'undelivered') setActiveTab('Undelivered');
   }, [searchParams]);
 
-  // 2. Fetch Data (Real-time)
+  // 2. Fetch Data (Real-time) - 🟢 FIX 5: Filter by User ID
   useEffect(() => {
-    const q = query(collection(db, 'bills'), orderBy('createdAt', 'desc'));
+    if (!user) return; // Don't fetch if not logged in
+
+    // 🟢 Filter: where('userId', '==', user.uid)
+    // Note: We sort client-side (in javascript) to prevent Firestore Index errors
+    const q = query(collection(db, 'bills'), where('userId', '==', user.uid));
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const billsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      // Sort by Date Descending (Newest First)
+      billsData.sort((a: any, b: any) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
       setBills(billsData);
     });
 
+    // Workers (Global or Personal - keeping global for now as per your logic)
     const unsubscribeWorkers = onSnapshot(collection(db, 'workers'), (snapshot) => {
       const workerList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setWorkers(workerList);
     });
 
     return () => { unsubscribe(); unsubscribeWorkers(); };
-  }, []);
+  }, [user]); // Re-run when user loads
 
   // 3. Search & Filter Logic
   const filteredBills = useMemo(() => {
@@ -75,7 +107,7 @@ function BillsContent() {
       if (!matchesSearch) return false;
 
       const isDelivered = bill.delivered === true || bill.status === 'Delivered';
-      // 🟢 FIX: Check if all items in bill are marked completed
+      // Check if all items in bill are marked completed
       const allItemsReady = bill.items?.length > 0 && bill.items.every((i: any) => i.completed);
 
       // B. Tab Logic
@@ -84,7 +116,7 @@ function BillsContent() {
       
       if (activeTab === 'Urgent') {
         if (isDelivered) return false;
-        // 🟢 FIX: If all items are ready, it's NOT Urgent anymore (it's just undelivered)
+        // If all items are ready, it's NOT Urgent anymore (it's just undelivered)
         if (allItemsReady) return false; 
 
         if (bill.isUrgent) return true; 
@@ -172,6 +204,20 @@ function BillsContent() {
     }
   };
 
+  // 🟢 FIX 6: Security Gatekeeper UI
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-green-800 font-bold">
+        <Loader2 className="animate-spin mr-2" /> Loading System...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
+  // --- MAIN UI ---
   return (
       <div className="min-h-screen bg-[#F2F4F7] font-sans pb-32">
         
@@ -260,7 +306,7 @@ function BillsContent() {
                       <p className="text-xs text-gray-400 font-medium mt-0.5">{bill.items?.length || 0} Items • {bill.mobile}</p>
                     </div>
                     <div className="text-right">
-                       {/* 🟢 Strikethrough for Paid Bills */}
+                       {/* Strikethrough for Paid Bills */}
                        <p className={`text-xl font-black ${isPaid ? 'text-green-600 line-through' : 'text-slate-900'}`}>AED {bill.totalAmount}</p>
                     </div>
                   </div>
@@ -293,7 +339,7 @@ function BillsContent() {
                          <input type="checkbox" checked={isPaid || false} onChange={(e) => toggleFullPayment(e, bill)} className="hidden" />
                        </label>
 
-                       {/* 🟢 Delivered Toggle */}
+                       {/* Delivered Toggle */}
                        <label className="flex items-center gap-1.5 cursor-pointer p-1" onClick={(e) => e.stopPropagation()}>
                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${isDelivered ? 'bg-blue-500 border-blue-500' : 'border-gray-300'}`}>
                            {isDelivered && <CheckCircle2 className="w-3 h-3 text-white" />}
@@ -361,7 +407,6 @@ function BillsContent() {
                   </button>
                 ) : (
                   <div className="flex gap-2">
-                    {/* 🟢 FIXED: Changed bg to white and text to black for better visibility */}
                     <input 
                       autoFocus
                       className="flex-1 bg-white border border-gray-300 px-4 py-3 rounded-xl font-bold text-black outline-none focus:ring-2 focus:ring-green-500"
