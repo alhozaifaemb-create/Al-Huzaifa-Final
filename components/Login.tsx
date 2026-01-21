@@ -2,122 +2,167 @@
 
 import { useState } from 'react';
 import { 
-  signInWithEmailAndPassword, 
   signInWithPopup, 
-  GoogleAuthProvider 
+  GoogleAuthProvider, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword 
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { Eye, EyeOff } from 'lucide-react'; // Import Eye icons
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // State to switch between Login and Sign Up
+  const [isSignUp, setIsSignUp] = useState(false);
+  
+  // 🆕 NEW: State to toggle password visibility
+  const [showPassword, setShowPassword] = useState(false);
 
-  // 1. EMAIL LOGIN
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      // Auto-redirect happens in Layout.tsx
-    } catch (err: any) {
-      console.error(err);
-      setError('Invalid email or password.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 2. GOOGLE LOGIN
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError('');
-    const provider = new GoogleAuthProvider();
-    
     try {
+      const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      // Auto-redirect happens in Layout.tsx
     } catch (err: any) {
-      console.error(err);
       setError('Google Sign-In failed. Try again.');
       setLoading(false);
     }
   };
 
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      if (isSignUp) {
+        // Create New Account
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        // Login Existing Account
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/email-already-in-use') {
+        setError('This email is already registered. Please Login.');
+      } else if (err.code === 'auth/wrong-password') {
+        setError('Incorrect password.');
+      } else if (err.code === 'auth/user-not-found') {
+        setError('No account found. Please Sign Up.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('Password should be at least 6 characters.');
+      } else {
+        setError('Authentication failed. Try again.');
+      }
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <div className="bg-white w-full max-w-md p-8 rounded-3xl shadow-xl border border-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-[#F2F4F7] p-4">
+      <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
         
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-green-800 uppercase tracking-tighter">Al Huzaifa</h1>
-          <p className="text-gray-400 font-bold text-sm tracking-widest uppercase">Premium Tailoring System</p>
+          <h1 className="text-3xl font-black text-green-800 tracking-tight uppercase">
+            {isSignUp ? 'Create Account' : 'Al Huzaifa'}
+          </h1>
+          <p className="text-xs font-bold text-gray-400 tracking-widest mt-2 uppercase">
+            {isSignUp ? 'Join the Team' : 'Premium Tailoring System'}
+          </p>
         </div>
 
         {/* Error Message */}
         {error && (
-            <div className="mb-4 bg-red-50 text-red-500 text-sm font-bold p-3 rounded-lg text-center border border-red-100">
-              {error}
-            </div>
+          <div className="mb-4 bg-red-50 text-red-500 text-sm font-bold p-3 rounded-lg text-center border border-red-100">
+            {error}
+          </div>
         )}
 
         {/* GOOGLE LOGIN BUTTON */}
-        <button 
+        <button
           onClick={handleGoogleLogin}
           disabled={loading}
-          className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 text-slate-700 font-bold py-4 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-95 mb-6"
+          className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 text-slate-700 font-bold py-4 rounded-xl hover:bg-gray-50 transition-all active:scale-95 disabled:opacity-50"
         >
           <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />
-          <span>Sign in with Google</span>
+          <span>{isSignUp ? 'Sign up with Google' : 'Sign in with Google'}</span>
         </button>
 
-        <div className="relative flex py-2 items-center mb-6">
-            <div className="flex-grow border-t border-gray-200"></div>
-            <span className="flex-shrink mx-4 text-gray-300 text-xs font-bold uppercase">Or Email</span>
-            <div className="flex-grow border-t border-gray-200"></div>
+        <div className="relative flex py-6 items-center">
+          <div className="flex-grow border-t border-gray-200"></div>
+          <span className="flex-shrink mx-4 text-gray-300 text-xs font-bold uppercase">Or Email</span>
+          <div className="flex-grow border-t border-gray-200"></div>
         </div>
 
         {/* Email Form */}
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleEmailAuth} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Email Address</label>
-            <input 
-              type="email" 
+            <input
+              type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full p-4 rounded-xl bg-gray-50 border-2 border-gray-100 font-bold text-slate-900 focus:border-green-500 focus:bg-white outline-none transition-all"
-              placeholder="admin@alhuzaifa.com"
+              placeholder="name@example.com"
             />
           </div>
 
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Password</label>
-            <input 
-              type="password" 
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-4 rounded-xl bg-gray-50 border-2 border-gray-100 font-bold text-slate-900 focus:border-green-500 focus:bg-white outline-none transition-all"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"} // 🆕 Toggles type
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-4 pr-12 rounded-xl bg-gray-50 border-2 border-gray-100 font-bold text-slate-900 focus:border-green-500 focus:bg-white outline-none transition-all"
+                placeholder="••••••••"
+              />
+              {/* 🆕 SHOW/HIDE BUTTON */}
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 focus:outline-none"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </div>
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={loading}
-            className="w-full bg-green-700 text-white font-black py-4 rounded-xl shadow-lg shadow-green-700/20 active:scale-95 transition-all hover:bg-green-800 disabled:opacity-50"
+            className="w-full bg-[#1E8449] text-white font-black py-4 rounded-xl shadow-lg shadow-green-200 hover:bg-[#145A32] transition-all active:scale-95 disabled:opacity-70 uppercase tracking-wide mt-2"
           >
-            {loading ? 'Verifying...' : 'SECURE LOGIN'}
+            {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Secure Login')}
           </button>
         </form>
+
+        {/* TOGGLE LINK */}
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-500 font-medium">
+            {isSignUp ? 'Already have an account?' : 'New to Al Huzaifa?'}
+            <button 
+              onClick={() => { setIsSignUp(!isSignUp); setError(''); }}
+              className="ml-2 text-green-700 font-black hover:underline focus:outline-none"
+            >
+              {isSignUp ? 'Login here' : 'Create Account'}
+            </button>
+          </p>
+        </div>
         
-        <p className="text-center text-[10px] text-gray-300 font-bold uppercase mt-8">
+        <p className="text-[10px] text-gray-300 font-bold text-center mt-8 uppercase tracking-widest">
           Protected System • Authorized Personnel Only
         </p>
+
       </div>
     </div>
   );
