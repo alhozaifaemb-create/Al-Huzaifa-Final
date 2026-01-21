@@ -5,22 +5,38 @@ import {
   signInWithPopup, 
   GoogleAuthProvider, 
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword 
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail // 🆕 Added for Forgot Password
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { Eye, EyeOff } from 'lucide-react'; // Import Eye icons
+import { Eye, EyeOff, Mail } from 'lucide-react'; 
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState(''); // 🆕 For success messages
   const [loading, setLoading] = useState(false);
-  
-  // State to switch between Login and Sign Up
   const [isSignUp, setIsSignUp] = useState(false);
-  
-  // 🆕 NEW: State to toggle password visibility
   const [showPassword, setShowPassword] = useState(false);
+
+  // 🆕 Forgot Password Logic
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address first.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setMessage('Reset link sent! Check your email inbox.');
+      setError('');
+    } catch (err: any) {
+      setError('Failed to send reset email. Check if the email is correct.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -38,27 +54,24 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setMessage('');
 
     try {
       if (isSignUp) {
-        // Create New Account
         await createUserWithEmailAndPassword(auth, email, password);
       } else {
-        // Login Existing Account
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/email-already-in-use') {
-        setError('This email is already registered. Please Login.');
-      } else if (err.code === 'auth/wrong-password') {
-        setError('Incorrect password.');
+      console.error(err.code);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+        setError('Invalid email or password. Try again or reset password.');
       } else if (err.code === 'auth/user-not-found') {
-        setError('No account found. Please Sign Up.');
-      } else if (err.code === 'auth/weak-password') {
-        setError('Password should be at least 6 characters.');
+        setError('No account found with this email. Please Sign Up.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('Email already exists. Please Login instead.');
       } else {
-        setError('Authentication failed. Try again.');
+        setError('Authentication failed. Please try again.');
       }
       setLoading(false);
     }
@@ -68,7 +81,6 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-[#F2F4F7] p-4">
       <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
         
-        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-black text-green-800 tracking-tight uppercase">
             {isSignUp ? 'Create Account' : 'Al Huzaifa'}
@@ -78,14 +90,18 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="mb-4 bg-red-50 text-red-500 text-sm font-bold p-3 rounded-lg text-center border border-red-100">
             {error}
           </div>
         )}
 
-        {/* GOOGLE LOGIN BUTTON */}
+        {message && (
+          <div className="mb-4 bg-green-50 text-green-600 text-sm font-bold p-3 rounded-lg text-center border border-green-100">
+            {message}
+          </div>
+        )}
+
         <button
           onClick={handleGoogleLogin}
           disabled={loading}
@@ -101,7 +117,6 @@ export default function Login() {
           <div className="flex-grow border-t border-gray-200"></div>
         </div>
 
-        {/* Email Form */}
         <form onSubmit={handleEmailAuth} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Email Address</label>
@@ -116,17 +131,28 @@ export default function Login() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Password</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-xs font-bold text-gray-400 uppercase">Password</label>
+              {/* 🆕 FORGOT PASSWORD LINK */}
+              {!isSignUp && (
+                <button 
+                  type="button" 
+                  onClick={handleForgotPassword}
+                  className="text-[10px] font-black text-green-700 hover:underline uppercase"
+                >
+                  Forgot Password?
+                </button>
+              )}
+            </div>
             <div className="relative">
               <input
-                type={showPassword ? "text" : "password"} // 🆕 Toggles type
+                type={showPassword ? "text" : "password"}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full p-4 pr-12 rounded-xl bg-gray-50 border-2 border-gray-100 font-bold text-slate-900 focus:border-green-500 focus:bg-white outline-none transition-all"
                 placeholder="••••••••"
               />
-              {/* 🆕 SHOW/HIDE BUTTON */}
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
@@ -146,12 +172,11 @@ export default function Login() {
           </button>
         </form>
 
-        {/* TOGGLE LINK */}
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-500 font-medium">
             {isSignUp ? 'Already have an account?' : 'New to Al Huzaifa?'}
             <button 
-              onClick={() => { setIsSignUp(!isSignUp); setError(''); }}
+              onClick={() => { setIsSignUp(!isSignUp); setError(''); setMessage(''); }}
               className="ml-2 text-green-700 font-black hover:underline focus:outline-none"
             >
               {isSignUp ? 'Login here' : 'Create Account'}
