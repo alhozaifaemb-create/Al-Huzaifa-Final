@@ -3,8 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
-import { db } from '@/lib/firebase';
+// Added 'auth' to the import below
+import { db, auth } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore'; 
+// Added 'onAuthStateChanged' import
+import { onAuthStateChanged } from 'firebase/auth';
+// Added Login component import
+import Login from '@/components/Login';
+
 import { 
   AlertTriangle, 
   Package, 
@@ -20,6 +26,35 @@ import Link from 'next/link';
 
 export default function Dashboard() {
   const router = useRouter();
+
+  // --- 🔒 NEW SECURITY GATEKEEPER START ---
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Show a simple loading text while checking if user is logged in
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-green-800 font-bold">
+        <Loader2 className="animate-spin mr-2" /> Starting System...
+      </div>
+    );
+  }
+
+  // If NOT logged in, show the Login Screen immediately
+  if (!user) {
+    return <Login />;
+  }
+  // --- 🔒 NEW SECURITY GATEKEEPER END ---
+
+  // --- 👇 YOUR ORIGINAL DASHBOARD CODE STARTS HERE (UNTOUCHED) ---
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
