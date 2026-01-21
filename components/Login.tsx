@@ -2,25 +2,22 @@
 
 import { useState } from 'react';
 import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  sendPasswordResetEmail // 🆕 Added for Forgot Password
+  sendPasswordResetEmail 
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { Eye, EyeOff, Mail } from 'lucide-react'; 
+import { Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react'; 
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [message, setMessage] = useState(''); // 🆕 For success messages
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // 🆕 Forgot Password Logic
   const handleForgotPassword = async () => {
     if (!email) {
       setError('Please enter your email address first.');
@@ -29,23 +26,11 @@ export default function Login() {
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, email);
-      setMessage('Reset link sent! Check your email inbox.');
+      setMessage('Reset link sent! Check your email (including Spam).');
       setError('');
     } catch (err: any) {
-      setError('Failed to send reset email. Check if the email is correct.');
+      setError('Failed to send reset email. Verify your email address.');
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (err: any) {
-      setError('Google Sign-In failed. Try again.');
       setLoading(false);
     }
   };
@@ -63,94 +48,89 @@ export default function Login() {
         await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (err: any) {
-      console.error(err.code);
+      console.error("Auth Error Code:", err.code);
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
-        setError('Invalid email or password. Try again or reset password.');
+        setError('Invalid email or password.');
       } else if (err.code === 'auth/user-not-found') {
-        setError('No account found with this email. Please Sign Up.');
+        setError('Account not found. Please Create Account.');
       } else if (err.code === 'auth/email-already-in-use') {
-        setError('Email already exists. Please Login instead.');
+        setError('Email already registered. Please Login.');
       } else {
-        setError('Authentication failed. Please try again.');
+        setError('Login failed. Please try again.');
       }
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F2F4F7] p-4">
-      <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-[#F2F4F7] p-4 font-sans">
+      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-gray-100 relative overflow-hidden">
         
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-green-800 tracking-tight uppercase">
+        {/* Design Decoration */}
+        <div className="absolute -top-10 -right-10 w-32 h-32 bg-green-50 rounded-full blur-3xl opacity-60"></div>
+        <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-blue-50 rounded-full blur-3xl opacity-60"></div>
+
+        <div className="text-center mb-10 relative z-10">
+          <div className="bg-green-100 w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-sm">
+            <ShieldCheck className="text-green-700 w-8 h-8" />
+          </div>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">
             {isSignUp ? 'Create Account' : 'Al Huzaifa'}
           </h1>
-          <p className="text-xs font-bold text-gray-400 tracking-widest mt-2 uppercase">
-            {isSignUp ? 'Join the Team' : 'Premium Tailoring System'}
+          <p className="text-[10px] font-bold text-gray-400 tracking-[0.2em] mt-2 uppercase">
+            {isSignUp ? 'Tailoring Management' : 'Premium Tailoring System'}
           </p>
         </div>
 
         {error && (
-          <div className="mb-4 bg-red-50 text-red-500 text-sm font-bold p-3 rounded-lg text-center border border-red-100">
+          <div className="mb-6 bg-red-50 text-red-500 text-xs font-bold p-4 rounded-2xl text-center border border-red-100 animate-in fade-in zoom-in duration-300">
             {error}
           </div>
         )}
 
         {message && (
-          <div className="mb-4 bg-green-50 text-green-600 text-sm font-bold p-3 rounded-lg text-center border border-green-100">
+          <div className="mb-6 bg-green-50 text-green-600 text-xs font-bold p-4 rounded-2xl text-center border border-green-100">
             {message}
           </div>
         )}
 
-        <button
-          onClick={handleGoogleLogin}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 text-slate-700 font-bold py-4 rounded-xl hover:bg-gray-50 transition-all active:scale-95 disabled:opacity-50"
-        >
-          <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />
-          <span>{isSignUp ? 'Sign up with Google' : 'Sign in with Google'}</span>
-        </button>
-
-        <div className="relative flex py-6 items-center">
-          <div className="flex-grow border-t border-gray-200"></div>
-          <span className="flex-shrink mx-4 text-gray-300 text-xs font-bold uppercase">Or Email</span>
-          <div className="flex-grow border-t border-gray-200"></div>
-        </div>
-
-        <form onSubmit={handleEmailAuth} className="space-y-4">
+        <form onSubmit={handleEmailAuth} className="space-y-5 relative z-10">
           <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Email Address</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-4 rounded-xl bg-gray-50 border-2 border-gray-100 font-bold text-slate-900 focus:border-green-500 focus:bg-white outline-none transition-all"
-              placeholder="name@example.com"
-            />
+            <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 ml-1">Email Address</label>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full p-4 pl-12 rounded-2xl bg-gray-50 border-2 border-gray-50 font-bold text-slate-900 focus:border-green-500 focus:bg-white outline-none transition-all placeholder:font-normal placeholder:text-gray-300"
+                placeholder="shop@alhuzaifa.com"
+              />
+            </div>
           </div>
 
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-bold text-gray-400 uppercase">Password</label>
-              {/* 🆕 FORGOT PASSWORD LINK */}
+            <div className="flex justify-between items-center mb-2 px-1">
+              <label className="block text-[10px] font-black text-gray-400 uppercase">Password</label>
               {!isSignUp && (
                 <button 
                   type="button" 
                   onClick={handleForgotPassword}
-                  className="text-[10px] font-black text-green-700 hover:underline uppercase"
+                  className="text-[10px] font-black text-green-700 hover:text-green-800 uppercase tracking-tighter"
                 >
-                  Forgot Password?
+                  Forgot?
                 </button>
               )}
             </div>
             <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type={showPassword ? "text" : "password"}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full p-4 pr-12 rounded-xl bg-gray-50 border-2 border-gray-100 font-bold text-slate-900 focus:border-green-500 focus:bg-white outline-none transition-all"
+                className="w-full p-4 pl-12 pr-12 rounded-2xl bg-gray-50 border-2 border-gray-50 font-bold text-slate-900 focus:border-green-500 focus:bg-white outline-none transition-all placeholder:font-normal placeholder:text-gray-300"
                 placeholder="••••••••"
               />
               <button
@@ -166,26 +146,26 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#1E8449] text-white font-black py-4 rounded-xl shadow-lg shadow-green-200 hover:bg-[#145A32] transition-all active:scale-95 disabled:opacity-70 uppercase tracking-wide mt-2"
+            className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl shadow-slate-200 hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-70 uppercase text-xs tracking-widest mt-4"
           >
-            {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Secure Login')}
+            {loading ? 'Authenticating...' : (isSignUp ? 'Create My Account' : 'Secure Login')}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500 font-medium">
-            {isSignUp ? 'Already have an account?' : 'New to Al Huzaifa?'}
+        <div className="mt-8 text-center relative z-10">
+          <p className="text-xs text-gray-500 font-bold">
+            {isSignUp ? 'HAVE AN ACCOUNT?' : 'NEW USER?'}
             <button 
               onClick={() => { setIsSignUp(!isSignUp); setError(''); setMessage(''); }}
-              className="ml-2 text-green-700 font-black hover:underline focus:outline-none"
+              className="ml-2 text-green-700 font-black border-b-2 border-green-700/20 hover:border-green-700 transition-all focus:outline-none uppercase"
             >
-              {isSignUp ? 'Login here' : 'Create Account'}
+              {isSignUp ? 'Login Now' : 'Create Account'}
             </button>
           </p>
         </div>
         
-        <p className="text-[10px] text-gray-300 font-bold text-center mt-8 uppercase tracking-widest">
-          Protected System • Authorized Personnel Only
+        <p className="text-[9px] text-gray-300 font-bold text-center mt-10 uppercase tracking-[0.3em] opacity-50">
+          Authorized Personnel Only • Secure v1.5
         </p>
 
       </div>
