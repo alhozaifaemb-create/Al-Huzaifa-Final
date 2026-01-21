@@ -2,15 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import { useBillingStore } from '@/store/billingStore';
-import { db } from '@/lib/firebase';
+// 🟢 FIX: Imports for Auth and Database
+import { db, auth } from '@/lib/firebase';
 import { 
   collection, 
   addDoc, 
   doc, 
   updateDoc, 
   getDoc,
-  Timestamp 
+  Timestamp,
+  query, // 🆕 Added for Privacy
+  where, // 🆕 Added for Privacy
+  onSnapshot, // 🆕 Added for Speed/Lag Fix
+  getDocs 
 } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth'; // 🆕 Added for stability
 import { 
   Plus, 
   Trash2, 
@@ -31,7 +37,7 @@ const generateWhatsAppLink = (phone: string, message: string) => {
   return `https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodedMessage}`;
 };
 
-// Generate bill number (you can enhance this with a counter collection)
+// Generate bill number
 const generateBillNo = () => {
   const year = new Date().getFullYear();
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
@@ -69,45 +75,64 @@ export default function BillCreationPage() {
   const [workers, setWorkers] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [savedBillNo, setSavedBillNo] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null); // 🆕 User state to handle privacy
 
-  // Load workers for assignment
+  // 1. AUTH LISTENER: Get current user once
   useEffect(() => {
-    const loadWorkers = async () => {
-      try {
-        const { getDocs } = await import('firebase/firestore');
-        const workersRef = collection(db, 'workers');
-        const snapshot = await getDocs(workersRef);
-        setWorkers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      } catch (error) {
-        console.error('Error loading workers:', error);
-      }
-    };
-    loadWorkers();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
   }, []);
 
+  // 2. PRIVACY & LAG FIX: Load ONLY your workers in real-time
+  useEffect(() => {
+    if (!user) return; // Wait for user to be logged in before fetching
+
+    const workersRef = collection(db, 'workers');
+    const q = query(workersRef, where('userId', '==', user.uid));
+    
+    // onSnapshot is faster and prevents the "lag" feel
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setWorkers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.error('Permission Error:', error);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // 3. SAVE LOGIC: WhatsApp Bug Fix & Privacy Stamp
   const handleSaveBill = async () => {
     if (!customerName || items.length === 0 || calculations.grandTotal === 0) {
       alert('Please fill customer name and add at least one item with rate > 0');
       return;
     }
 
+    if (!user) {
+      alert("System Error: You must be logged in to save bills.");
+      return;
+    }
+
     setSaving(true);
     try {
       const billNo = generateBillNo();
+      
       const billData = {
+        userId: user.uid, // 🟢 PRIVATE STAMP: Required by rules
         billNo,
         customerName,
         mobile,
         orderDate: Timestamp.fromDate(orderDate),
         deliveryDate: Timestamp.fromDate(deliveryDate),
-        items: items.map(item => ({
+        items: items.map((item: any) => ({
           id: item.id,
           itemName: item.itemName,
           originalRate: item.originalRate,
           vat: item.vat,
           totalWithVat: item.totalWithVat,
-          ready: item.ready,
-          assignedWorkerId: item.assignedWorkerId,
+          ready: item.ready || false,
+          assignedWorkerId: item.assignedWorkerId || null,
           assignedAt: item.assignedAt ? Timestamp.fromDate(item.assignedAt) : null,
         })),
         calculations: {
@@ -118,37 +143,40 @@ export default function BillCreationPage() {
           pendingAmount: calculations.pendingAmount,
         },
         status: {
-          delivered,
-          fullPayment,
+          delivered: delivered || false,
+          fullPayment: fullPayment || false,
         },
         isFavourite: false,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
-        createdBy: 'admin', // Replace with actual user ID
+        createdBy: user.uid,
       };
 
-      // Save to Firestore
+      // 🟢 BUG FIX: Wait for Save to COMPLETELY finish before opening WhatsApp
+      // This prevents the browser from cutting off the database connection
       const docRef = await addDoc(collection(db, 'bills'), billData);
       
-      setSavedBillNo(billNo);
-      
-      // Generate WhatsApp message
-      const message = `Thank you for choosing Al Huzaifa Tailoring and Emb\nشكراً لاختيارك الحذيفة للخياطة والتطريز\n\nBill No: ${billNo}\nTotal: AED ${calculations.grandTotal.toFixed(2)}\nAdvance: AED ${advancePayment.toFixed(2)}\nPending: AED ${calculations.pendingAmount.toFixed(2)}`;
-      
-      if (mobile) {
-        const whatsappLink = generateWhatsAppLink(mobile, message);
-        window.open(whatsappLink, '_blank');
-      }
+      if (docRef.id) {
+          setSavedBillNo(billNo);
+          
+          // Generate WhatsApp message
+          const message = `Thank you for choosing Al Huzaifa Tailoring and Emb\nشكراً لاختيارك الحذيفة للخياطة والتطريز\n\nBill No: ${billNo}\nTotal: AED ${calculations.grandTotal.toFixed(2)}\nAdvance: AED ${advancePayment.toFixed(2)}\nPending: AED ${calculations.pendingAmount.toFixed(2)}`;
+          
+          if (mobile) {
+            const whatsappLink = generateWhatsAppLink(mobile, message);
+            window.open(whatsappLink, '_blank');
+          }
 
-      // Reset store after a delay
-      setTimeout(() => {
-        resetStore();
-        setSavedBillNo(null);
-      }, 3000);
+          // Reset store after a delay
+          setTimeout(() => {
+            resetStore();
+            setSavedBillNo(null);
+          }, 3000);
+      }
 
     } catch (error) {
       console.error('Error saving bill:', error);
-      alert('Error saving bill. Please try again.');
+      alert('Permission Denied: Ensure you are logged in and using your own data.');
     } finally {
       setSaving(false);
     }
@@ -158,25 +186,23 @@ export default function BillCreationPage() {
     if (!selectedItemId) return;
 
     try {
-      // Update item in store
       assignItemToWorker(selectedItemId, workerId);
 
-      // Update worker document in Firestore
       const workerRef = doc(db, 'workers', workerId);
       const workerDoc = await getDoc(workerRef);
       
       if (workerDoc.exists()) {
         const workerData = workerDoc.data();
-        const selectedItem = items.find(item => item.id === selectedItemId);
+        const selectedItem = items.find((item: any) => item.id === selectedItemId);
         
         if (selectedItem) {
           const assignedItem = {
-            billId: '', // Will be set when bill is saved
+            billId: '', 
             itemId: selectedItemId,
             billNo: savedBillNo || 'DRAFT',
             itemName: selectedItem.itemName,
             deliveryDate: Timestamp.fromDate(deliveryDate),
-            workerRate: 0, // To be set manually
+            workerRate: 0,
             sentToWorker: false,
             receivedFromWorker: false,
             assignedAt: Timestamp.now(),
@@ -193,15 +219,13 @@ export default function BillCreationPage() {
       setSelectedItemId(null);
     } catch (error) {
       console.error('Error assigning worker:', error);
-      alert('Error assigning worker. Please try again.');
     }
   };
 
   const handleItemReady = (itemId: string) => {
     toggleItemReady(itemId);
     
-    // Generate WhatsApp notification if all items are ready
-    const allReady = items.every(item => item.ready || item.id === itemId);
+    const allReady = items.every((item: any) => item.ready || item.id === itemId);
     if (allReady && mobile && savedBillNo) {
       const message = `Your Kandura is ready with Bill No ${savedBillNo}. Balance is AED ${calculations.pendingAmount.toFixed(2)}. Please visit Al Huzaifa Tailoring and Emb to collect it. Thank you.\n\nكندورتك جاهزة برقم الفاتورة ${savedBillNo}. المبلغ المتبقي ${calculations.pendingAmount.toFixed(2)} درهم. يرجى زيارة الحذيفة للخياطة والتطريز لاستلامها. شكراً.`;
       const whatsappLink = generateWhatsAppLink(mobile, message);
@@ -310,7 +334,7 @@ export default function BillCreationPage() {
           </div>
 
           <div className="space-y-4">
-            {items.map((item, index) => (
+            {items.map((item: any) => (
               <div
                 key={item.id}
                 className="border border-gray-200 rounded-lg p-4 space-y-3"
