@@ -3,12 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
-// Added 'auth' to the import below
 import { db, auth } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore'; 
-// Added 'onAuthStateChanged' import
 import { onAuthStateChanged } from 'firebase/auth';
-// Added Login component import
 import Login from '@/components/Login';
 
 import { 
@@ -27,34 +24,11 @@ import Link from 'next/link';
 export default function Dashboard() {
   const router = useRouter();
 
-  // --- 🔒 NEW SECURITY GATEKEEPER START ---
+  // --- 1. SECURITY VARIABLES (Moved to Top) ---
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Show a simple loading text while checking if user is logged in
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-green-800 font-bold">
-        <Loader2 className="animate-spin mr-2" /> Starting System...
-      </div>
-    );
-  }
-
-  // If NOT logged in, show the Login Screen immediately
-  if (!user) {
-    return <Login />;
-  }
-  // --- 🔒 NEW SECURITY GATEKEEPER END ---
-
-  // --- 👇 YOUR ORIGINAL DASHBOARD CODE STARTS HERE (UNTOUCHED) ---
+  // --- 2. DASHBOARD VARIABLES (Moved to Top - Safety Fix) ---
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -69,90 +43,18 @@ export default function Dashboard() {
   const [urgentPreview, setUrgentPreview] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // --- 3. ALL USE EFFECTS (Moved to Top - Safety Fix) ---
+
+  // Check Login Status
   useEffect(() => {
-    loadStatsAndUrgent();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const loadStatsAndUrgent = async () => {
-    try {
-      const billsRef = collection(db, 'bills');
-      const snapshot = await getDocs(billsRef);
-      
-      const now = new Date();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-      
-      const isSameDay = (d1: Date, d2: Date) => 
-        d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear();
-
-      let activeOrders = 0;
-      let todayRevenue = 0;
-      let monthlyRevenue = 0;
-      let yearlyRevenue = 0;
-      let urgentList: any[] = [];
-
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const amount = Number(data.totalAmount) || 0;
-        
-        let billDate = new Date();
-        if (data.createdAt?.toDate) {
-             billDate = data.createdAt.toDate();
-        } else if (data.date) {
-             billDate = new Date(data.date);
-        }
-
-        const isDelivered = data.status === 'Delivered' || data.delivered === true;
-        // 🟢 FIX: Check if all items are finished
-        const allItemsDone = data.items?.every((i: any) => i.completed === true) || false;
-
-        if (!isDelivered) {
-          activeOrders++;
-          
-          // 🟢 URGENT LOGIC: Only show if NOT all items are done
-          if (!allItemsDone) {
-              if (data.isUrgent) {
-                  urgentList.push({ id: doc.id, ...data });
-              } else if (data.deliveryDate) {
-                const delivery = new Date(data.deliveryDate);
-                const diffTime = delivery.getTime() - now.getTime();
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                
-                // Show if passed due date or within 5 days
-                if (diffDays <= 5) {
-                  urgentList.push({ id: doc.id, ...data });
-                }
-              }
-          }
-        }
-
-        if (billDate.getFullYear() === currentYear) {
-          yearlyRevenue += amount;
-          if (billDate.getMonth() === currentMonth) {
-            monthlyRevenue += amount;
-            if (isSameDay(billDate, now)) {
-              todayRevenue += amount;
-            }
-          }
-        }
-      });
-
-      setStats({
-        totalActiveOrders: activeOrders,
-        revenueToday: todayRevenue,
-        revenueMonthly: monthlyRevenue,
-        revenueYearly: yearlyRevenue
-      });
-
-      setUrgentPreview(urgentList.slice(0, 5));
-
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Search Logic
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
@@ -191,6 +93,7 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Trigger Search on Typing
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (searchQuery) performSearch(searchQuery);
@@ -198,11 +101,111 @@ export default function Dashboard() {
     return () => clearTimeout(timeoutId);
   }, [searchQuery, performSearch]);
 
+  // Load Dashboard Data
+  const loadStatsAndUrgent = async () => {
+    try {
+      const billsRef = collection(db, 'bills');
+      const snapshot = await getDocs(billsRef);
+      
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      
+      const isSameDay = (d1: Date, d2: Date) => 
+        d1.getDate() === d2.getDate() && d1.getMonth() === d2.getMonth() && d1.getFullYear() === d2.getFullYear();
+
+      let activeOrders = 0;
+      let todayRevenue = 0;
+      let monthlyRevenue = 0;
+      let yearlyRevenue = 0;
+      let urgentList: any[] = [];
+
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        const amount = Number(data.totalAmount) || 0;
+        
+        let billDate = new Date();
+        if (data.createdAt?.toDate) {
+             billDate = data.createdAt.toDate();
+        } else if (data.date) {
+             billDate = new Date(data.date);
+        }
+
+        const isDelivered = data.status === 'Delivered' || data.delivered === true;
+        const allItemsDone = data.items?.every((i: any) => i.completed === true) || false;
+
+        if (!isDelivered) {
+          activeOrders++;
+          
+          if (!allItemsDone) {
+              if (data.isUrgent) {
+                  urgentList.push({ id: doc.id, ...data });
+              } else if (data.deliveryDate) {
+                const delivery = new Date(data.deliveryDate);
+                const diffTime = delivery.getTime() - now.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                
+                if (diffDays <= 5) {
+                  urgentList.push({ id: doc.id, ...data });
+                }
+              }
+          }
+        }
+
+        if (billDate.getFullYear() === currentYear) {
+          yearlyRevenue += amount;
+          if (billDate.getMonth() === currentMonth) {
+            monthlyRevenue += amount;
+            if (isSameDay(billDate, now)) {
+              todayRevenue += amount;
+            }
+          }
+        }
+      });
+
+      setStats({
+        totalActiveOrders: activeOrders,
+        revenueToday: todayRevenue,
+        revenueMonthly: monthlyRevenue,
+        revenueYearly: yearlyRevenue
+      });
+
+      setUrgentPreview(urgentList.slice(0, 5));
+
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Run Load Data Once (Only if user exists to be safe, but hook must run unconditionally)
+  useEffect(() => {
+    loadStatsAndUrgent();
+  }, []);
+
+
+  // --- 4. 🔒 GATEKEEPER (SECURITY CHECK - NOW SAFELY AT THE BOTTOM) ---
+  
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-green-800 font-bold">
+        <Loader2 className="animate-spin mr-2" /> Starting System...
+      </div>
+    );
+  }
+
+  // IF NOT LOGGED IN -> SHOW LOGIN SCREEN
+  if (!user) {
+    return <Login />;
+  }
+
+  // --- 5. RENDER DASHBOARD (Only happens if logged in) ---
   return (
     <Layout>
       <div className="min-h-screen bg-[#F2F4F7] font-sans pb-24">
         
-        {/* 1. MODERN HEADER */}
+        {/* HEADER */}
         <div className="pt-8 px-6 pb-4 bg-white sticky top-0 z-10 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07)]">
           <div className="flex justify-between items-center">
             <div>
@@ -217,9 +220,8 @@ export default function Dashboard() {
 
         <div className="px-5 mt-6 space-y-6">
 
-          {/* 2. HERO REVENUE CARD (Premium Dark Gradient) */}
+          {/* HERO REVENUE CARD */}
           <div className="bg-gradient-to-br from-[#1E8449] to-[#145A32] rounded-[2rem] p-6 text-white shadow-xl shadow-green-200 relative overflow-hidden">
-            {/* Background decoration */}
             <div className="absolute -right-10 -top-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl"></div>
             
             <div className="relative z-10">
@@ -239,9 +241,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* 3. BENTO GRID STATS */}
+          {/* BENTO GRID STATS */}
           <div className="grid grid-cols-2 gap-4">
-            {/* Active Orders Widget */}
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-gray-100 flex flex-col justify-between h-32">
               <div className="bg-blue-50 w-10 h-10 rounded-full flex items-center justify-center text-blue-600">
                 <Package className="w-5 h-5" />
@@ -252,7 +253,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Urgent Orders Widget (Clickable) */}
             <button 
               onClick={() => router.push('/bills?filter=urgent')}
               className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-gray-100 flex flex-col justify-between h-32 relative overflow-hidden group text-left transition hover:scale-[1.02]"
@@ -270,7 +270,7 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* 4. SEARCH BAR (Modernized) */}
+          {/* SEARCH BAR */}
           <div className="bg-white rounded-2xl shadow-sm p-2 flex items-center border border-gray-200 relative">
              <Search className="text-gray-400 ml-2" size={20} />
              <input
@@ -302,7 +302,7 @@ export default function Dashboard() {
              )}
           </div>
 
-          {/* 5. QUICK ACTIONS LIST (iOS Style) */}
+          {/* QUICK ACTIONS */}
           <div>
             <h3 className="text-sm font-bold text-gray-900 mb-4 px-1">Quick Actions</h3>
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-50 overflow-hidden">
@@ -342,7 +342,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* 6. URGENT PREVIEW LIST (Clean Design) */}
+          {/* URGENT PREVIEW */}
           {urgentPreview.length > 0 && (
             <div>
               <h3 className="font-black text-slate-900 mb-3 flex items-center gap-2 px-1">
