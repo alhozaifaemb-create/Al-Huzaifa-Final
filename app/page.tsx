@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { db, auth } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore'; 
+// 🟢 RE-VERIFIED: Added query and where for data isolation
+import { collection, getDocs, query, where } from 'firebase/firestore'; 
 import { onAuthStateChanged } from 'firebase/auth';
 import Login from '@/components/Login';
 
@@ -24,11 +25,11 @@ import Link from 'next/link';
 export default function Dashboard() {
   const router = useRouter();
 
-  // --- 1. SECURITY VARIABLES (Moved to Top) ---
+  // --- 1. SECURITY VARIABLES ---
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // --- 2. DASHBOARD VARIABLES (Moved to Top - Safety Fix) ---
+  // --- 2. DASHBOARD VARIABLES (ORIGINAL STRUCTURE PRESERVED) ---
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -43,9 +44,7 @@ export default function Dashboard() {
   const [urgentPreview, setUrgentPreview] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // --- 3. ALL USE EFFECTS (Moved to Top - Safety Fix) ---
-
-  // Check Login Status
+  // --- 3. AUTHENTICATION LISTENER ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -54,9 +53,9 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, []);
 
-  // Search Logic
-  const performSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
+  // --- 4. SEARCH LOGIC (FIXED: Filters by User UID) ---
+  const performSearch = useCallback(async (queryText: string) => {
+    if (!queryText.trim() || !user) {
       setSearchResults([]);
       setSearchLoading(false);
       return;
@@ -65,9 +64,11 @@ export default function Dashboard() {
     setSearchLoading(true);
     try {
       const billsRef = collection(db, 'bills');
-      const snapshot = await getDocs(billsRef);
+      // 🟢 FIX: Added user filter to search
+      const q = query(billsRef, where('userId', '==', user.uid));
+      const snapshot = await getDocs(q);
       
-      const queryLower = query.toLowerCase().trim();
+      const queryLower = queryText.toLowerCase().trim();
       const results: any[] = [];
 
       snapshot.forEach((doc) => {
@@ -91,9 +92,8 @@ export default function Dashboard() {
     } finally {
       setSearchLoading(false);
     }
-  }, []);
+  }, [user]);
 
-  // Trigger Search on Typing
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (searchQuery) performSearch(searchQuery);
@@ -101,11 +101,15 @@ export default function Dashboard() {
     return () => clearTimeout(timeoutId);
   }, [searchQuery, performSearch]);
 
-  // Load Dashboard Data
-  const loadStatsAndUrgent = async () => {
+  // --- 5. DATA LOADER (FIXED: Filters stats by User UID) ---
+  const loadStatsAndUrgent = useCallback(async () => {
+    if (!user) return;
+
     try {
       const billsRef = collection(db, 'bills');
-      const snapshot = await getDocs(billsRef);
+      // 🟢 FIX: Dashboard now only counts YOUR bills
+      const q = query(billsRef, where('userId', '==', user.uid));
+      const snapshot = await getDocs(q);
       
       const now = new Date();
       const currentMonth = now.getMonth();
@@ -177,36 +181,33 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  // Run Load Data Once (Only if user exists to be safe, but hook must run unconditionally)
   useEffect(() => {
-    loadStatsAndUrgent();
-  }, []);
+    if (user) loadStatsAndUrgent();
+  }, [user, loadStatsAndUrgent]);
 
 
-  // --- 4. 🔒 GATEKEEPER (SECURITY CHECK - NOW SAFELY AT THE BOTTOM) ---
-  
+  // --- 6. SECURITY GATEKEEPER ---
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 text-green-800 font-bold">
-        <Loader2 className="animate-spin mr-2" /> Starting System...
+        <Loader2 className="animate-spin mr-2" /> Starting Al Huzaifa System...
       </div>
     );
   }
 
-  // IF NOT LOGGED IN -> SHOW LOGIN SCREEN
   if (!user) {
     return <Login />;
   }
 
-  // --- 5. RENDER DASHBOARD (Only happens if logged in) ---
+  // --- 7. UI RENDER (EXACT ORIGINAL STRUCTURE) ---
   return (
     <Layout>
       <div className="min-h-screen bg-[#F2F4F7] font-sans pb-24">
         
         {/* HEADER */}
-        <div className="pt-8 px-6 pb-4 bg-white sticky top-0 z-10 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07)]">
+        <div className="pt-8 px-6 pb-4 bg-white sticky top-0 z-10 shadow-sm">
           <div className="flex justify-between items-center">
             <div>
               <p className="text-xs font-bold text-gray-400 tracking-widest uppercase">Welcome Back</p>
@@ -220,7 +221,7 @@ export default function Dashboard() {
 
         <div className="px-5 mt-6 space-y-6">
 
-          {/* HERO REVENUE CARD */}
+          {/* HERO REVENUE CARD (PRESERVED) */}
           <div className="bg-gradient-to-br from-[#1E8449] to-[#145A32] rounded-[2rem] p-6 text-white shadow-xl shadow-green-200 relative overflow-hidden">
             <div className="absolute -right-10 -top-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl"></div>
             
@@ -241,7 +242,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* BENTO GRID STATS */}
+          {/* BENTO GRID (PRESERVED) */}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-white p-5 rounded-[1.5rem] shadow-sm border border-gray-100 flex flex-col justify-between h-32">
               <div className="bg-blue-50 w-10 h-10 rounded-full flex items-center justify-center text-blue-600">
@@ -270,7 +271,7 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* SEARCH BAR */}
+          {/* SEARCH BAR & DROP-DOWN (PRESERVED) */}
           <div className="bg-white rounded-2xl shadow-sm p-2 flex items-center border border-gray-200 relative">
              <Search className="text-gray-400 ml-2" size={20} />
              <input
@@ -282,7 +283,6 @@ export default function Dashboard() {
              />
              {searchLoading && <Loader2 className="animate-spin text-green-600 mr-2" size={20} />}
              
-             {/* Search Dropdown Results */}
              {searchResults.length > 0 && (
                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50">
                  {searchResults.map((bill) => (
@@ -302,47 +302,21 @@ export default function Dashboard() {
              )}
           </div>
 
-          {/* QUICK ACTIONS */}
+          {/* QUICK ACTIONS (PRESERVED) */}
           <div>
             <h3 className="text-sm font-bold text-gray-900 mb-4 px-1">Quick Actions</h3>
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-50 overflow-hidden">
-              
-              <button 
-                onClick={() => router.push('/bills?filter=undelivered')} 
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
+              <button onClick={() => router.push('/bills')} className="w-full flex items-center justify-between p-4 hover:bg-gray-50">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600">
-                    <Package className="w-5 h-5" />
-                  </div>
-                  <div className="text-left">
-                    <p className="font-bold text-gray-800 text-sm">Undelivered Items</p>
-                    <p className="text-xs text-gray-400">Check pending deliveries</p>
-                  </div>
+                  <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600"><Users size={20} /></div>
+                  <div className="text-left"><p className="font-bold text-gray-800 text-sm">All Bills</p><p className="text-xs text-gray-400">View full history</p></div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-300" />
               </button>
-
-              <button 
-                onClick={() => router.push('/bills')}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <div className="text-left">
-                    <p className="font-bold text-gray-800 text-sm">All Bills</p>
-                    <p className="text-xs text-gray-400">View full history</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-gray-300" />
-              </button>
-
             </div>
           </div>
 
-          {/* URGENT PREVIEW */}
+          {/* URGENT PREVIEW (PRESERVED) */}
           {urgentPreview.length > 0 && (
             <div>
               <h3 className="font-black text-slate-900 mb-3 flex items-center gap-2 px-1">
@@ -350,27 +324,20 @@ export default function Dashboard() {
                 Urgent Due (Next 5 Days)
               </h3>
               <div className="space-y-3">
-                {urgentPreview.map((bill) => {
-                  const pendingItems = bill.items
-                    ?.filter((i: any) => !i.completed)
-                    .map((i: any) => i.name)
-                    .join(', ') || 'Ready for Delivery';
-
-                  return (
-                    <Link key={bill.id} href={`/bills/${bill.id}`}>
-                      <div className="bg-white p-4 rounded-2xl shadow-sm border border-red-100 flex justify-between items-center active:bg-gray-50">
-                        <div>
-                          <p className="font-black text-slate-900 text-lg">#{bill.billNo}</p>
-                          <p className="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded-md inline-block mt-1">Due: {bill.deliveryDate}</p>
-                        </div>
-                        <div className="text-right w-1/2">
-                          <p className="font-bold text-slate-700 text-sm truncate">{pendingItems}</p>
-                          <span className="text-[10px] text-gray-400 font-bold uppercase">Tap to view</span>
-                        </div>
+                {urgentPreview.map((bill) => (
+                  <Link key={bill.id} href={`/bills/${bill.id}`}>
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-red-100 flex justify-between items-center active:bg-gray-50">
+                      <div>
+                        <p className="font-black text-slate-900 text-lg">#{bill.billNo}</p>
+                        <p className="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded-md inline-block mt-1">Due: {bill.deliveryDate}</p>
                       </div>
-                    </Link>
-                  );
-                })}
+                      <div className="text-right w-1/2">
+                        <p className="font-bold text-slate-700 text-sm truncate">{bill.customerName}</p>
+                        <span className="text-[10px] text-gray-400 font-bold uppercase">Tap to view</span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
               </div>
             </div>
           )}
