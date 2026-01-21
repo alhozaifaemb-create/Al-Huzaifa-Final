@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore'; 
-import { db } from '@/lib/firebase'; 
+import { db, auth } from '@/lib/firebase'; 
+import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSwipeable } from 'react-swipeable'; 
 import { 
@@ -19,21 +20,55 @@ export default function Layout({ children }: LayoutProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  
+  // 🟢 1. User State for Filtering
+  const [user, setUser] = useState<any>(null);
 
   // 🟢 State for real-time stats
   const [totalBills, setTotalBills] = useState(0);
   const [urgentBills, setUrgentBills] = useState(0);
   const [totalWorkers, setTotalWorkers] = useState(0);
 
-  // 🟢 Real-time Firestore Listeners for Sidebar Stats
+  // 🟢 2. Listen for User Login
   useEffect(() => {
-    // Bills Count
-    const unsubscribeBills = onSnapshot(collection(db, 'bills'), (snapshot) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Handle Logout
+  const handleLogout = async () => {
+    if (confirm("Are you sure you want to logout?")) {
+      try {
+        await signOut(auth);
+        window.location.reload(); 
+      } catch (error) {
+        console.error("Error logging out:", error);
+      }
+    }
+  };
+
+  // 🟢 3. Real-time Listeners (FILTERED BY USER ID)
+  useEffect(() => {
+    if (!user) {
+        // If not logged in, reset stats to 0
+        setTotalBills(0);
+        setUrgentBills(0);
+        setTotalWorkers(0);
+        return;
+    }
+
+    // Bills Count (Filtered)
+    const billsRef = collection(db, 'bills');
+    const qBills = query(billsRef, where('userId', '==', user.uid));
+
+    const unsubscribeBills = onSnapshot(qBills, (snapshot) => {
       setTotalBills(snapshot.size);
     });
 
-    // Urgent Bills Count
-    const unsubscribeUrgentBills = onSnapshot(collection(db, 'bills'), (snapshot) => {
+    // Urgent Bills Count (Filtered)
+    const unsubscribeUrgentBills = onSnapshot(qBills, (snapshot) => {
       const now = new Date();
       let urgentCount = 0;
       snapshot.docs.forEach(doc => {
@@ -56,13 +91,14 @@ export default function Layout({ children }: LayoutProps) {
       setUrgentBills(urgentCount);
     });
 
-    // Workers Count
+    // Workers Count (Workers are usually shared, but can be filtered if needed)
+    // keeping workers global for now unless you want them private too
     const unsubscribeWorkers = onSnapshot(collection(db, 'workers'), (snapshot) => {
       setTotalWorkers(snapshot.size);
     });
 
     return () => { unsubscribeBills(); unsubscribeUrgentBills(); unsubscribeWorkers(); };
-  }, []);
+  }, [user]); // 🟢 Re-run when user changes
 
   const navigation = [
     { name: 'Home', href: '/', icon: Home },
@@ -123,7 +159,7 @@ export default function Layout({ children }: LayoutProps) {
           {/* HEADER: User Profile */}
           <div className="p-6 bg-gradient-to-br from-green-800 to-green-600 text-white relative overflow-hidden">
             
-            {/* 🔴 CLOSE BUTTON ADDED HERE */}
+            {/* CLOSE BUTTON */}
             <button 
               onClick={() => setSidebarOpen(false)}
               className="absolute top-4 right-4 z-[110] p-2 bg-black/20 text-white rounded-full hover:bg-black/40 active:scale-95 transition-all"
@@ -217,7 +253,7 @@ export default function Layout({ children }: LayoutProps) {
           <div className="p-6 border-t border-gray-100 bg-gray-50">
             <button 
               className="flex items-center justify-center space-x-2 text-white bg-red-500 hover:bg-red-600 w-full px-4 py-3 rounded-xl transition-all shadow-lg shadow-red-200"
-              onClick={() => alert("Are you sure you want to logout?")}
+              onClick={handleLogout}
             >
               <LogOut className="w-5 h-5" />
               <span className="font-bold text-sm">Log Out</span>
